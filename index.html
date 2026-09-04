@@ -147,9 +147,9 @@
   </div>
 
   <div class="stats">
-    <div class="stat gold"><div class="n" id="s-raised">0</div><div class="l">зібрано, грн</div></div>
-    <div class="stat blue"><div class="n" id="s-people">0</div><div class="l">нас долучилось із 140</div></div>
-    <div class="stat"><div class="n" id="s-marks">0</div><div class="l">малюнків і написів на дошці</div></div>
+    <div class="stat gold"><div class="n" id="s-raised">—</div><div class="l">зібрано на банці, грн</div></div>
+    <div class="stat blue"><div class="n" id="s-cells">0</div><div class="l">клітинок відкрито</div></div>
+    <div class="stat"><div class="n" id="s-people">0</div><div class="l">нас долучилось із 140</div></div>
   </div>
   <div class="prog-wrap">
     <div class="prog-head"><span>Разом до цілі</span><span><b id="p-cur">0</b> / <b id="p-goal">0</b> грн</span></div>
@@ -226,7 +226,7 @@
   <h3>Проявити клітинку</h3>
   <p class="msub">Ваш внесок — 50 грн — проявляє одну клітинку спільної картини.</p>
   <div class="hint">Спершу зробіть внесок на <a href="https://send.monobank.ua/jar/4RX4eZDuWj" target="_blank" rel="noopener">банку</a>, потім впишіть себе тут. Будь-який внесок однаково важливий.</div>
-  <div class="field"><label for="m-name">Ваше ім'я</label><input id="m-name" maxlength="28" placeholder="Напр., Оксана з QA" autocomplete="off"></div>
+  <div class="field"><label for="m-name">Ваше ім'я — за бажанням (можна анонімно)</label><input id="m-name" maxlength="28" placeholder="Напр., Оксана з QA" autocomplete="off"></div>
   <div class="field"><label for="m-ded">Побажання військовим — за бажанням</label><textarea id="m-ded" rows="2" maxlength="60" placeholder="тримаймося · дякуємо вам · щоб усі повернулись"></textarea></div>
   <div class="m-actions"><button class="btn btn-ghost" id="m-cancel">Скасувати</button><button class="btn btn-primary" id="m-confirm">Проявити</button></div>
 </div></div>
@@ -288,15 +288,17 @@ window.FIREBASE_CONFIG = {
   function renderGrid(){for(var i=0;i<GTOT;i++)paintCell(i,false);}
 
   function fmt(n){return String(n).replace(/\B(?=(\d{3})+(?!\d))/g,' ');}
+  var jar={amount:null,goal:0}, DEFAULT_GOAL=50000;
   function updateStats(){
-    var pix=Object.keys(revealed).length,raised=pix*PRICE,set={};
+    var pix=Object.keys(revealed).length,set={};
     for(var k in revealed) if(revealed[k].name) set[revealed[k].name]=1;
-    document.getElementById('s-raised').textContent=fmt(raised);
-    document.getElementById('s-people').textContent=Object.keys(set).length;
-    document.getElementById('s-marks').textContent=stickers.length;
-    document.getElementById('p-cur').textContent=fmt(raised);
-    document.getElementById('p-goal').textContent=fmt(GOAL);
-    document.getElementById('p-fill').style.width=Math.min(100,(raised/GOAL)*100)+'%';
+    var goal=jar.goal>0?jar.goal:DEFAULT_GOAL, amt=jar.amount;
+    document.getElementById('s-raised').textContent = (amt==null)?'—':fmt(amt);
+    document.getElementById('s-cells').textContent = fmt(pix)+' / '+fmt(GTOT);
+    document.getElementById('s-people').textContent = Object.keys(set).length;
+    document.getElementById('p-cur').textContent = (amt==null)?'—':fmt(amt);
+    document.getElementById('p-goal').textContent = fmt(goal);
+    document.getElementById('p-fill').style.width = ((amt==null)?0:Math.min(100,(amt/goal)*100))+'%';
     picreal.style.opacity=Math.max(0,Math.min(1,(pix/GTOT-0.9)/0.1));
   }
   function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
@@ -363,8 +365,7 @@ window.FIREBASE_CONFIG = {
   document.addEventListener('keydown',function(e){if(e.key==='Escape'){if(ov.classList.contains('open'))closeModal();if(cov.classList.contains('open'))closeCreate();}});
   document.getElementById('m-confirm').addEventListener('click',function(){
     var name=document.getElementById('m-name').value.trim(),ded=document.getElementById('m-ded').value.trim();
-    if(!name){var el=document.getElementById('m-name');el.focus();el.style.borderColor='#d9534f';return;}
-    myName=name;var idx=pendingIdx;if(idx==null||revealed[idx])idx=randomCovered();
+    if(name)myName=name;var idx=pendingIdx;if(idx==null||revealed[idx])idx=randomCovered();
     if(idx!=null){var rec={name:name,ded:ded};revealed[idx]=rec;paintCell(idx,true);updateStats();renderWall();persistPixel(idx,rec);}
     document.getElementById('m-name').value='';document.getElementById('m-ded').value='';closeModal();
   });
@@ -438,8 +439,11 @@ window.FIREBASE_CONFIG = {
 
   if(USE_FB){
     db.collection('pixels').onSnapshot(function(snap){
-      var r={}; snap.forEach(function(doc){var d=doc.data();r[+doc.id]={name:(d&&d.name)||'—',ded:(d&&d.ded)||''};});
+      var r={}; snap.forEach(function(doc){var d=doc.data();r[+doc.id]={name:(d&&d.name)||'',ded:(d&&d.ded)||''};});
       revealed=r; renderGrid(); updateStats(); renderWall();
+    }, function(e){console.warn(e);});
+    db.collection('meta').doc('jar').onSnapshot(function(d){
+      if(d&&d.exists){var dd=d.data()||{};jar.amount=(dd.amount==null?jar.amount:Number(dd.amount));jar.goal=Number(dd.goal)||0;updateStats();}
     }, function(e){console.warn(e);});
     db.collection('items').onSnapshot(function(snap){
       var arr=[]; snap.forEach(function(doc){var d=doc.data();if(d&&d.img)arr.push({id:doc.id,img:d.img,nx:d.nx,ny:d.ny,scale:d.scale||1,base:d.base||160,ts:d.ts||0});});
